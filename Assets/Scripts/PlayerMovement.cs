@@ -8,7 +8,10 @@ public class PlayerMovement : MonoBehaviour
     CharacterController charController;
     Vector3 moveDir;
     public float speed;
+    public float jumpPower;
     public GameObject target;
+
+    float usedSpeed;
 
     Animator myAnim;
 
@@ -19,12 +22,43 @@ public class PlayerMovement : MonoBehaviour
 
     public static bool canMove = true;
 
+    bool canAttack = true;
+
+    bool inCombat = false;
+
+    Camera cam;
+    float yVel;
+
+    GameObject targetEnemy;
+
 	// Use this for initialization
 	void Start ()
     {
         charController = GetComponent<CharacterController>();
         myAnim = GetComponent<Animator>();
+        cam = Camera.main;
+        usedSpeed = speed;
 	}
+
+    public void ToggleInCombat()
+    {
+        inCombat = !inCombat;
+    }
+
+    public void SetTarget(GameObject enemy)
+    {
+        targetEnemy = enemy;
+    }
+
+    public void SetSpeed(int newSpeed)
+    {
+        usedSpeed = newSpeed;
+    }
+
+    public void ResetSpeed()
+    {
+        usedSpeed = speed;
+    }
 	
 	// Update is called once per frame
 	void Update ()
@@ -34,65 +68,89 @@ public class PlayerMovement : MonoBehaviour
             return;
         }
 
-        moveDir.x = Input.GetAxis("Horizontal");
-        moveDir.z = Input.GetAxis("Vertical");
+        //move dir effected by camera direction.
+        moveDir = (cam.transform.forward * Input.GetAxis("Vertical")) + (cam.transform.right * Input.GetAxis("Horizontal"));
 
-        if(moveDir.x == 0 && moveDir.z == 0)
+        //When not running
+        if(moveDir == Vector3.zero)
         {
             running = false;
-            myAnim.SetBool("run", false);
         }
+        //When running.
         else
         {
             running = true;
-            myAnim.SetBool("run", true);
+
+
+            if (!inCombat) { target.transform.position = transform.position + moveDir; }
+            else { target.transform.position = targetEnemy.transform.position; }
+            
         }
 
-        /*
-        if(Input.GetAxis("Horizontal") > 0f)
-        {
-            moveDir.x = 1;
-            moveDir.z = -1;
-        }
-        if(Input.GetAxis("Horizontal") < 0f)
-        {
-            moveDir.x = -1;
-            moveDir.z = 1;
-        }
-        if (Input.GetAxis("Vertical") > 0f)
-        {
-            moveDir.x = 1;
-            moveDir.z = 1;
-        }
-        if (Input.GetAxis("Vertical") < 0f)
-        {
-            moveDir.x = -1;
-            moveDir.z = -1;
-        }
-
-        if(Input.GetAxis("Vertical") == 0f && Input.GetAxis("Horizontal") == 0f)
-        {
-            moveDir.x = 0;
-            moveDir.z = 0;
-        }
-        */
-        CheckInput();
-        //moveDir = transform.TransformDirection(moveDir);
+        myAnim.SetBool("run", running);
 
         
+        //Change y velocity of the player if they are not grounded.
+        if(!charController.isGrounded)
+        {
+            //Should be in line with real world gravity - ish.
+            yVel -= 9.8f * Time.deltaTime;
+        }
+        //If the player presses space and the player is on the ground then jump
+        if (Input.GetKeyDown(KeyCode.Space) && charController.isGrounded){yVel = jumpPower;}
 
-        moveDir.y = -3f;
 
-        charController.Move(moveDir * speed * Time.deltaTime);
+        moveDir.y = yVel;
+        
 
+        charController.Move(moveDir * usedSpeed * Time.deltaTime);
 
+        //Look in direction the player has input based on the placement of the gameobject.
         rotX = transform.eulerAngles.x;
         rotZ = transform.eulerAngles.z;
 
         transform.LookAt(target.transform);
 
         transform.eulerAngles = new Vector3(rotX, transform.eulerAngles.y, rotZ);
+
+        
+        if(inCombat)
+        {
+
+            AnimatorClipInfo[] clipInfo = myAnim.GetCurrentAnimatorClipInfo(0);
+            Debug.Log(clipInfo[0].clip.name);
+            //Check for a case to break away from being in combat state.
+            if (CheckForBreakFromCombat()) { BreakFromCombat(); }
+
+            if(Input.GetKeyDown(KeyCode.Mouse0) && canAttack)
+            {
+                myAnim.SetTrigger("attack");
+                canAttack = false;
+            }
+                
+        }
 	}
+
+    public void ResetCanAttack()
+    {
+        canAttack = true;
+    }
+
+    bool CheckForBreakFromCombat()
+    {
+        float dist = Vector3.Distance(transform.position, targetEnemy.transform.position);
+        if (dist > 10) { return true; }
+        else { return false; }
+            
+    }
+
+    public void BreakFromCombat()
+    {
+        inCombat = false;
+
+        targetEnemy.GetComponent<CrabController>().ToggleCombat();
+        targetEnemy = null;
+    }
 
     void CheckInput()
     {
